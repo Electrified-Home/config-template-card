@@ -1,5 +1,8 @@
-import resolve from 'rollup-plugin-node-resolve';
-import typescript from 'rollup-plugin-typescript2';
+import alias from '@rollup/plugin-alias';
+import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import json from '@rollup/plugin-json';
+import typescript from '@rollup/plugin-typescript';
 import serve from 'rollup-plugin-serve';
 
 export default {
@@ -7,10 +10,22 @@ export default {
   output: {
     dir: './dist',
     format: 'es',
+    sourcemap: true,
   },
   plugins: [
-    resolve(),
-    typescript(),
+    alias({
+      entries: [{ find: /^lit-element$/, replacement: 'lit-element/lit-element.js' }],
+    }),
+    resolve({
+      browser: true,
+      exportConditions: ['browser', 'default'],
+    }),
+    commonjs(),
+    json(),
+    typescript({
+      tsconfig: './tsconfig.json',
+      sourceMap: true,
+    }),
     serve({
       contentBase: './dist',
       host: '0.0.0.0',
@@ -22,3 +37,6 @@ export default {
     }),
   ], treeshake: false,
 };
+    ],
+  ],
+  treeshake: true,

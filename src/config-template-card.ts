@@ -1,9 +1,12 @@
-import { LitElement, html, customElement, property, TemplateResult, PropertyValues, state } from 'lit-element';
+import { LitElement, html, TemplateResult, PropertyValues } from 'lit';
+import { property, state } from 'lit/decorators.js';
 import deepClone from 'deep-clone-simple';
 import { computeCardSize, HomeAssistant, LovelaceCard } from 'custom-card-helpers';
 
 import { ConfigTemplateConfig } from './types';
 import { CARD_VERSION } from './const';
+
+const CARD_TAG = 'hass-enabled-config-template-card';
 
 /* eslint no-console: 0 */
 console.info(
@@ -12,11 +15,29 @@ console.info(
   'color: white; font-weight: bold; background: dimgray',
 );
 
-@customElement('config-template-card')
 export class ConfigTemplateCard extends LitElement {
-  @property({ attribute: false }) public hass?: HomeAssistant;
+  @property({ attribute: false })
+  public get hass(): HomeAssistant | undefined {
+    return this._hass;
+  }
+
+  public set hass(value: HomeAssistant | undefined) {
+    const oldValue = this._hass;
+    this._hass = value;
+
+    // Forward hass updates to hosted element even when this wrapper does not rerender
+    // so child cards depending on hass updates (e.g. mini-graph-card) keep updating.
+    if (this._element) {
+      (this._element as any).hass = value;
+    }
+
+    this.requestUpdate('hass', oldValue);
+  }
+
   @state() private _config?: ConfigTemplateConfig;
   @state() private _helpers?: any;
+  private _element?: LovelaceCard | HTMLElement;
+  private _hass?: HomeAssistant;
   private _initialized = false;
 
   public setConfig(config: ConfigTemplateConfig): void {
@@ -142,6 +163,7 @@ export class ConfigTemplateCard extends LitElement {
       ? this._helpers.createRowElement(config)
       : this._helpers.createHuiElement(config);
     element.hass = this.hass;
+    this._element = element;
 
     if (this._config.element) {
       if (style) {
@@ -215,7 +237,6 @@ export class ConfigTemplateCard extends LitElement {
       return template;
     }
 
-    /* eslint-disable @typescript-eslint/no-unused-vars */
     const user = this.hass ? this.hass.user : undefined;
     const states = this.hass ? this.hass.states : undefined;
     const vars: any[] = [];
@@ -241,18 +262,26 @@ export class ConfigTemplateCard extends LitElement {
       }
     }
 
+    // Evaluate array-style vars with access to user/states/vars via function parameters to avoid minifier renaming issues.
+    const evalWithContext = (code: string) => Function('user', 'states', 'vars', `'use strict'; return (${code});`)(user, states, vars);
+
     for (const v in arrayVars) {
-      const newV = eval(arrayVars[v]);
+      const newV = evalWithContext(arrayVars[v]);
       vars.push(newV);
     }
 
     for (const varName in namedVars) {
-      const newV = eval(namedVars[varName]);
+      const newV = evalWithContext(namedVars[varName]);
       vars[varName] = newV;
       // create variable definitions to be injected:
       varDef = varDef + `var ${varName} = vars['${varName}'];\n`;
     }
 
-    return eval(varDef + template.substring(2, template.length - 1));
+    const evaluator = Function('user', 'states', 'vars', `${varDef} return (${template.substring(2, template.length - 1)});`);
+    return evaluator(user, states, vars);
   }
+}
+
+if (!customElements.get(CARD_TAG)) {
+  customElements.define(CARD_TAG, ConfigTemplateCard);
 }
